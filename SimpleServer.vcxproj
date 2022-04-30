@@ -154,7 +154,7 @@
   <ItemGroup>
     <ClCompile Include="TelnetChat.cpp" />
     <ClCompile Include="BrowserChat.cpp" />
-    <ClCompile Include="ChatClientClass.cpp" />
+    <ClCompile Include="TcpConnection.cpp" />
     <ClCompile Include="SimpleChatServer.cpp" />
     <ClCompile Include="http_request.cpp" />
     <ClCompile Include="TelnetIAC.cpp" />
