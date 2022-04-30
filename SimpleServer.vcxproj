@@ -152,7 +152,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="SimpleServer.cpp" />
+    <ClCompile Include="TelnetChat.cpp" />
+    <ClCompile Include="BrowserChat.cpp" />
+    <ClCompile Include="ChatClientClass.cpp" />
+    <ClCompile Include="SimpleChatServer.cpp" />
+    <ClCompile Include="http_request.cpp" />
+    <ClCompile Include="TelnetIAC.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ChatClient.h" />
+    <ClInclude Include="TelnetIAC.h" />
+    <ClInclude Include="TcpConnection.h" />
+    <ClInclude Include="serv.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
