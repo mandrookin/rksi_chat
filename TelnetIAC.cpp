@@ -1,3 +1,11 @@
+// Различная информация о протоколе Telnet
+// https://www.ibm.com/docs/en/zos/2.3.0?topic=problems-telnet-commands-options
+// https://datatracker.ietf.org/doc/html/rfc732
+// https://stackoverflow.com/questions/30643457/telnet-linemode-suboption-trapsig-does-not-work
+// https://stackoverflow.com/questions/10413963/telnet-iac-command-answering
+// http://www.iana.org/assignments/telnet-options/telnet-options.xhtml
+// https://www.omnisecu.com/tcpip/telnet-negotiation.php
+
 #include "TelnetIAC.h"
 #include "ChatClient.h"
 

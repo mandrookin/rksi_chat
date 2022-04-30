@@ -1,8 +1,6 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS 1
 
-// https://www.ibm.com/docs/en/zos/2.3.0?topic=problems-telnet-commands-options
-// https://datatracker.ietf.org/doc/html/rfc732
-// https://stackoverflow.com/questions/30643457/telnet-linemode-suboption-trapsig-does-not-work
+
 
 #include <stdio.h> 
 #include <winsock2.h>

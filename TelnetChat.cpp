@@ -1,7 +1,6 @@
 //
 // Хорошее описание ANSI-команд
 // https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
-//
 
 #define _WINSOCK_DEPRECATED_NO_WARNINGS 1
 #define _CRT_SECURE_NO_WARNINGS 1
