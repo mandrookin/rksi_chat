@@ -4,19 +4,22 @@
 class ChatClient {
 protected:
     TcpConnection   *   tcp;
+    char user_name[180];
 
 public:
     ChatClient(class TcpConnection * client)
     {
         tcp = client;
+        strncpy_s(user_name, tcp->source_name, sizeof(user_name));
     }
 
-    int SendData(char * message, int length)
+    int SendData(const char * message, int length)
     {
         return tcp->SendData(message, length);
     }
-
+    int CloseSocket() { return tcp->Close();  }
     long long GetHash() { return tcp->hash.hash; }
+    // Абстрактные функцмм
     virtual int RunChat() = 0;
     virtual const char * TransportName() = 0;
 };
@@ -28,7 +31,7 @@ class TelnetIAC : public ChatClient
         struct {
             int         echo : 1;
             int         sga : 1;
-            int         naws;
+            int         naws : 1;
         };
     } iac_sent_t;
 
@@ -100,6 +103,8 @@ class BrowserClient : public ChatClient
 private:
     int RunChat();
     const char * TransportName() { return "Web Client"; };
+
+    int HTTP_Response(url_t *url);
 public:
     BrowserClient(class TcpConnection *, url_t url, char * header);
     void DebugURL();

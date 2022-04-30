@@ -103,9 +103,9 @@ int TcpConnection::SendData(const char * data, int size)
     return SendBytes;
 }
 
-void TcpConnection::Close()
+int TcpConnection::Close()
 {
-    closesocket(socket);
+    return closesocket(socket);
 }
 
 void TcpConnection::Accept()

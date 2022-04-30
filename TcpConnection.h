@@ -38,7 +38,7 @@ public:
     int ReceiveData(char * input_buffer, int buffer_size);
     int ReceiveData(char * input_buffer, int buffer_size, int timeout_ms);
     int SendData(const char * data, int size);
-    void Close();
+    int Close();
     void Accept();
 
     TcpConnection(int socket);

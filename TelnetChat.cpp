@@ -64,7 +64,7 @@ void TelnetClient::SwitchViewport(viewport_t window)
     unsigned char buff[80];
     if (window == InputWindow)
     {
-        if(current_viewport != None)
+        if(current_viewport == OutputWindow)
             GetCursorPosition(&cur_x, &cur_y);
         bottom = terminal_height;
         x = user_x;
@@ -73,12 +73,12 @@ void TelnetClient::SwitchViewport(viewport_t window)
         y = user_y;
 #else
         top = terminal_height;
-        y = 1;
+        y = bottom; // 1;
 #endif
     }
     else
     {
-        if (current_viewport != None)
+        if (current_viewport == InputWindow)
             GetCursorPosition(&user_x, &user_y);
         top = 1;
         bottom = terminal_height - 1;
@@ -104,21 +104,9 @@ void TelnetClient::SendBroadcastMessage(char * message, int len)
             TelnetClient * chat = (TelnetClient*) peer;
             // if (tcp->hash.hash != peer->GetHash()) // Send to all clients except source
             {
-#if true
                 chat->SwitchViewport(OutputWindow);
-#else
-                chat->GetCursorPosition(&chat->user_x, &chat->user_y);
-                chat->SetViewport(1, chat->terminal_height - 1);
-                chat->SetCursorPosition(chat->cur_x, chat->cur_y);
-#endif
-                peer->SendData(message, len);
-#if true
+                chat->SendData(message, len);
                 chat->SwitchViewport(InputWindow);
-#else
-                chat->GetCursorPosition(&chat->cur_x, &chat->cur_y);
-                chat->SetViewport(1, chat->terminal_height);
-                chat->SetCursorPosition(user_x, user_y);
-#endif
             }
         }
     }
@@ -151,16 +139,30 @@ int TelnetClient::RunChat()
 bool TelnetClient::CommandParser(char * command)
 {
     bool done = false;
-    if (strncmp(command, "name ", 5) == 0)
+    if(strncmp(command, "help", 4) == 0)
     {
-        if (strlen(command + 5) < 3) {
-            printf("Name must be at least 3 character lenght");
-            done = true;
-        }
-        strcpy(tcp->source_name, command + 5);
+        const char * help = 
+            "\\name - change user name"
+            "\\bye - leave chat";
+
+        SendData( (char*)help, strlen(help));
         done = true;
     }
-    else if (strcmp(command, "BYE") == 0)
+    else if (strncmp(command, "name ", 5) == 0)
+    {
+        if (strlen(command + 5) < 3) {
+            const char * msg = "Name must be at least 3 characters length";
+            SendData((char*)msg, strlen(msg));
+        }
+        else {
+            char buff[80];
+            int len = snprintf(buff, 80, "\r\nUser %s renamed as %s\n", user_name, command + 5);
+            strcpy(user_name, command + 5);
+            SendBroadcastMessage(buff, len);
+        }
+        done = true;
+    }
+    else if (strcmp(command, "bye") == 0)
     {
         chat_state = GoodBye;
         done = true;
@@ -176,29 +178,20 @@ int TelnetClient::DefaultRunChat()
 
     this->FindTerminalSize();
 
-#if false
-    SetViewport(1, terminal_height - 1);
-#else
     SwitchViewport(OutputWindow);
-#endif
-    const char * hello = "\033cWelcome to\033[32m simple chat\033[0m!";
+
+    const char * hello = "\033cWelcome to\033[32m simple chat\033[0m! Use \help command for help";
     SendTelnet((unsigned char*)hello, strlen(hello));
    
     for (std::string & str : chat_messages) {
-        tcp->SendData(str.c_str(), str.size());
+        SendData(str.c_str(), str.size());
     }
+    this->GetCursorPosition(&cur_x, &cur_y);
 
-    len = snprintf(message, sizeof(message), "\r\nUser \033[33m%s\033[0m joined to chat", tcp->source_name);
-    this->current_viewport = None;
+    len = snprintf(message, sizeof(message), "\r\nUser \033[33m%s\033[0m joined to chat", user_name);
     SendBroadcastMessage(message, len);
 
-    this->GetCursorPosition(&cur_x, &cur_y);
-#if false
-    SetViewport(1, terminal_height);
-    this->SetCursorPosition(1, terminal_height);
-#else
     SwitchViewport(InputWindow);
-#endif
 
     while (chat_state == CommonChat)
     {
@@ -219,7 +212,6 @@ int TelnetClient::DefaultRunChat()
 
         if (read_size < 0) {
             perror("socker error on receive: ");
-            tcp->Close();
             break;
         }
 
@@ -239,7 +231,7 @@ int TelnetClient::DefaultRunChat()
         if (buff[0] == '\\' && CommandParser(buff + 1) == true)
                 continue;
 
-        len = snprintf(message, 4096, "\r\n\033[33m%s\033[0m: %s", tcp->source_name, buff);
+        len = snprintf(message, 4096, "\r\n\033[33m%s\033[0m: %s", user_name, buff);
 
         if (chat_messages.size() > 25)
             chat_messages.pop_front();
@@ -251,13 +243,15 @@ int TelnetClient::DefaultRunChat()
         struct tm * tm = localtime(&t);
         fprintf(log_file, "%d.%02d.%02d#%02d:%02d:%02d %s %s",
             tm->tm_year, tm->tm_mon, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec,
-            tcp->source_name, message);
+            user_name, message);
 
         SendBroadcastMessage(message, len);
+        SendTelnet( (unsigned char*) "\033[2K", 4);
     }
-    len = snprintf(message, sizeof(message), "\r\nUser \033[33m%s\033[0m leave chat", tcp->source_name);
+    len = snprintf(message, sizeof(message), "\r\nUser \033[33m%s\033[0m leave chat", user_name);
     SendBroadcastMessage(message, len);
-    fprintf(log_file, "TcpConnection disconnected %s:\n", tcp->source_name);
+    fprintf(log_file, "TcpConnection disconnected %s:\n", user_name);
     fflush(log_file);
+    CloseSocket();
 }
 

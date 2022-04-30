@@ -50,7 +50,7 @@ int NegativeResponse(char * buff, int buff_size)
     return strlen(buff);
 }
 
-int HTTP_Response(TcpConnection * client, url_t *url)
+int BrowserClient::HTTP_Response(url_t *url)
 {
     int len;
     char http_buffer[4096];
@@ -60,7 +60,7 @@ int HTTP_Response(TcpConnection * client, url_t *url)
     else
         len = NegativeResponse(http_buffer, sizeof(http_buffer));
 
-    client->SendData(http_buffer, len);
+    SendData(http_buffer, len);
     return len;
 }
 
@@ -77,7 +77,7 @@ int BrowserClient::RunChat()
     int len;
     char http_buffer[4096];
 
-    HTTP_Response(tcp, &url);
+    HTTP_Response(&url);
 
     while (true) 
     {
@@ -97,10 +97,10 @@ int BrowserClient::RunChat()
             if (next) {
                 DebugURL();
             }
-            HTTP_Response(tcp, &url);
+            HTTP_Response(&url);
         }
     }
-    tcp->Close();
+    CloseSocket();
     return len;
 }
 

@@ -234,7 +234,7 @@ int main(int argc, char const *argv[])
 
     poks_context.server_socket = prepare_server_socket(&address);
 
-    printf("Chat-Server ready accept connections\n");
+    printf("Chat-Server ready to accept connections\n");
     fprintf(log_file, "Server started on %s\n", get_current_date());
     fflush(log_file);
 

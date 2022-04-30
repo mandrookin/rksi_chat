@@ -17,10 +17,10 @@ void TelnetIAC::SendTelnet(unsigned char * msg, int len)
         printf("==> "); DebugIAC(msg, len);
     }
     else if (msg[0] == 0x1b)
-        fprintf(stdout, "%s ==> \\0x1b%s\n", tcp->source_name, msg + 1);
+        fprintf(stdout, "%s ==> \\0x1b%s\n", user_name, msg + 1);
     else
-        fprintf(stdout, "%s ==> %s\n", tcp->source_name, msg);
-    tcp->SendData((char*)msg, len);
+        fprintf(stdout, "%s ==> %s\n", user_name, msg);
+    SendData((char*)msg, len);
 }
 
 void ErrorMessage(int err)
@@ -62,7 +62,7 @@ int TelnetIAC::DebugIAC(unsigned char * data, int len)
 {
     int counter = 0;
 
-    printf("%s ", tcp->source_name);
+    printf("%s ", user_name);
 
     for (int i = 0; i < len; i++) {
         if (counter > 2)
@@ -115,7 +115,7 @@ void TelnetIAC::FindTerminalSize()
     const char request_window_size[3] = { IAC, 0xfd, 0x1f };
     SendTelnet((unsigned char*)request_window_size, 3);
 
-    int len = tcp->ReceiveData((char*)buffer, sizeof(buffer), 500);
+    int len = ReceiveData((char*)buffer, sizeof(buffer), 500);
     if (len <= 0)
         return;
 
@@ -200,24 +200,16 @@ void TelnetIAC::GetCursorPosition(int * x, int * y)
 }
 
 
+// ----------------------------------------------------------------------
+// Процедура рукопожатия Telnet
+// Текущая версия отклоняет все опции, но изменяет их в процессе работы
+// ----------------------------------------------------------------------
 int TelnetIAC::Handshake(unsigned char * data, int len)
 {
     unsigned char input_buffer[2048];
 
     DebugIAC(data, len);
-#if false
-    const unsigned char handshake_response[] = {
-    IAC, DONT, 0x1f,
-    IAC, DONT, 0x20,
-    IAC, DONT, 0x18,
-    IAC, DONT, 0x27,
-    IAC, WONT, 0x01,
-    IAC, DONT, 0x03,
-    IAC, WONT, 0x03
-    };
-    tcp->SendData((char*)handshake_response, 21);
-    printf("==> "); DebugIAC((unsigned char*)handshake_response, 21);
-#else
+
     unsigned char *p = data, *finish = data + len;
     while (p < finish) {
         if (*p++ != IAC) {
@@ -235,25 +227,8 @@ int TelnetIAC::Handshake(unsigned char * data, int len)
             continue;
         }
     }
-    tcp->SendData((char*)data, len);
+    SendData((char*)data, len);
     printf("==> "); DebugIAC(data, len);
-#endif
-
-#if false
-    len = tcp->ReceiveData((char*)input_buffer, sizeof(input_buffer), 500);
-    if (len > 0) {
-        DebugTelnet(input_buffer, len);
-
-        const char second_response[] = { 0xff, DONT, 36 };
-        tcp->SendData(second_response, 3);
-        printf("==> ");     DebugTelnet((unsigned char*)second_response, 3);
-
-        len = tcp->ReceiveData((char*)input_buffer, sizeof(input_buffer), 500);
-        if (len > 0) {
-            DebugTelnet(input_buffer, len);
-        }
-    }
-#endif
 
     return 0;
 }
