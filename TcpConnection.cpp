@@ -40,9 +40,10 @@ int TcpConnection::WaitDataReceive(int timeout_ms)
 
     if (SOCKET_ERROR == (res = select(0, &read_s, NULL, NULL, &time_out))) return -1;
 
-    if ((res != 0) && (FD_ISSET(socket, &read_s)))
+//    if ((res != 0) && (FD_ISSET(socket, &read_s)))
+    if ((res > 0) && (FD_ISSET(socket, &read_s)))
     {
-        res = 1;
+    res = 1;
     }
     else
     {
@@ -129,12 +130,8 @@ void TcpConnection::Accept()
         source_port = ntohs(s->sin_port);
         inet_ntop(AF_INET, &s->sin_addr, buff, sizeof(buff));
 
-#if true
-        static int color = 32;
-        snprintf(source_name, sizeof(source_name), "\x1b[%dm%s:%d\x1b[0m", color++, buff, source_port);
-#else
-        snprintf(source_name, sizeof(source_name), "%s:%d", buff, source_port);
-#endif
+        const int color = 32;
+        snprintf(source_name, sizeof(source_name), "\x1b[%dm%s:%d\x1b[0m", color, buff, source_port);
 
         this->hash.id.ip_address = s->sin_addr.S_un.S_addr;
         this->hash.id.port = source_port;

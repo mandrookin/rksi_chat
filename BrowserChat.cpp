@@ -50,7 +50,7 @@ int NegativeResponse(char * buff, int buff_size)
     return strlen(buff);
 }
 
-int BrowserClient::HTTP_Response(url_t *url)
+int BrowserChat::HTTP_Response(url_t *url)
 {
     int len;
     char http_buffer[4096];
@@ -64,7 +64,7 @@ int BrowserClient::HTTP_Response(url_t *url)
     return len;
 }
 
-void BrowserClient::DebugURL()
+void BrowserChat::DebugURL()
 {
     printf("REQ=%d, L=%d, PATH=\"%s\", V=%04x\n", url.method, url.path_len, url.path, url.version.human);
     for (int i = 0; i < url.query_count; i++)
@@ -72,7 +72,7 @@ void BrowserClient::DebugURL()
 }
 
 
-int BrowserClient::RunChat()
+int BrowserChat::RunChat()
 {
     int len;
     char http_buffer[4096];
@@ -105,7 +105,7 @@ int BrowserClient::RunChat()
 }
 
 // Это конструктор
-BrowserClient::BrowserClient(TcpConnection * tcp, url_t u, char * header) : ChatClient(tcp)
+BrowserChat::BrowserChat(TcpConnection * tcp, url_t u, char * header) : ChatClient(tcp)
 {
     url = u;
 

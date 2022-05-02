@@ -15,13 +15,18 @@
 #include "ChatClient.h"
 #include "TelnetIAC.h"
 
-extern CRITICAL_SECTION                    poks_protector;
-extern std::map<long long, ChatClient *>   chat_clients;
-extern std::list<std::string>              chat_messages;
-extern FILE                        *       log_file;
+// ---------------------------------------------
+//  Эти переменные объявдены в другом месте
+// ---------------------------------------------
+extern CRITICAL_SECTION                 poks_protector;
+extern clients_strorage_t               chat_clients;
+extern std::list<std::string>           chat_messages;
+extern FILE                        *    log_file;
 
-
-TelnetClient::TelnetClient(TcpConnection * tcp, char * tcp_packet, int length) : TelnetIAC(tcp)
+// ---------------------------------------------
+//  Конструктор класс TelnetChat
+// ---------------------------------------------
+TelnetChat::TelnetChat(TcpConnection * tcp, char * tcp_packet, int length) : TelnetIAC(tcp)
 {
     chat_state = CommonChat;
     current_viewport = None;
@@ -32,11 +37,10 @@ TelnetClient::TelnetClient(TcpConnection * tcp, char * tcp_packet, int length) :
     TelnetIAC::Handshake( (unsigned char*) tcp_packet, length);
 }
 
-
 // ---------------------------------------------
 //  Установка области прокрутки терминала
 // ---------------------------------------------
-void TelnetClient::SetViewport(int top, int bottom)
+void TelnetChat::SetViewport(int top, int bottom)
 {
     //ESC[<t>; <b> r
     unsigned char buff[80];
@@ -47,7 +51,7 @@ void TelnetClient::SetViewport(int top, int bottom)
 // ---------------------------------------------
 //  Установка позиции курсора
 // ---------------------------------------------
-void TelnetClient::SetCursorPosition(int x, int y)
+void TelnetChat::SetCursorPosition(int x, int y)
 {
     unsigned char buff[80];
     int len = snprintf( (char*)buff, 80, "\033[%d;%dH", y, x);
@@ -58,7 +62,7 @@ void TelnetClient::SetCursorPosition(int x, int y)
 // ---------------------------------------------
 //  Выборк области ввода/вывода в терминале
 // ---------------------------------------------
-void TelnetClient::SwitchViewport(viewport_t window)
+void TelnetChat::SwitchViewport(viewport_t window)
 {
     int top, bottom, y, x;
     unsigned char buff[80];
@@ -68,13 +72,8 @@ void TelnetClient::SwitchViewport(viewport_t window)
             GetCursorPosition(&cur_x, &cur_y);
         bottom = terminal_height;
         x = user_x;
-#if false
-        top = 1;
-        y = user_y;
-#else
         top = terminal_height;
         y = bottom; // 1;
-#endif
     }
     else
     {
@@ -90,10 +89,22 @@ void TelnetClient::SwitchViewport(viewport_t window)
     current_viewport = window;
 }
 
-// ---------------------------------------------
-//  Рассылка всем участникам чата, // -- кроме источника
-// ---------------------------------------------
-void TelnetClient::SendBroadcastMessage(char * message, int len)
+void TelnetChat::SendChatMessage(std::string msg)
+{
+    SwitchViewport(OutputWindow);
+    SendData((const char*) msg.c_str(), msg.size());
+    SwitchViewport(InputWindow);
+}
+
+void TelnetChat::AppendMessage(char * message)
+{
+    send_queue.push_back(message);
+}
+
+// -------------------------------------------------
+//  Рассылка всем участникам чата, в том числе себе
+// -------------------------------------------------
+void TelnetChat::SendBroadcastMessage(char * message, int len)
 {
     EnterCriticalSection(&poks_protector);
     for (const auto& any : chat_clients)
@@ -101,62 +112,57 @@ void TelnetClient::SendBroadcastMessage(char * message, int len)
         ChatClient * peer = any.second;
         if (strcmp(peer->TransportName(), "Telnet") == 0)
         {
-            TelnetClient * chat = (TelnetClient*) peer;
-            // if (tcp->hash.hash != peer->GetHash()) // Send to all clients except source
-            {
-                chat->SwitchViewport(OutputWindow);
-                chat->SendData(message, len);
-                chat->SwitchViewport(InputWindow);
-            }
+            ((TelnetChat*)peer)->AppendMessage(message);
         }
     }
+
+    if (chat_messages.size() > 25)
+        chat_messages.pop_front();
+    chat_messages.push_back(message);
+
     LeaveCriticalSection(&poks_protector);
 }
 
-// ---------------------------------------------
-//  ANSI chat
-// ---------------------------------------------
-
-int TelnetClient::RunChat()
+void TelnetChat::FlushQueue()
 {
-    int res;
-    switch(chat_state)
+    std::string data;
+    EnterCriticalSection(&poks_protector);
+    for (const auto& msg : this->send_queue)
     {
-    case HandshakeState:
-    {
-        const int stack_size = 1024;
-        unsigned char * buf = (unsigned char *)_malloca(stack_size);
-        res = TelnetIAC::Handshake(buf, stack_size);
-        _freea(buf);
-        break;
+        data += msg;
     }
-    default:
-        res = DefaultRunChat();
-    }
-    return res;
+    send_queue.clear();
+    LeaveCriticalSection(&poks_protector);
+    if (data.size() > 0)
+        SendChatMessage(data);
 }
 
-bool TelnetClient::CommandParser(char * command)
+// ---------------------------------------------
+//  Распознавани и обратка команд чата
+// ---------------------------------------------
+bool TelnetChat::CommandParser(char * command)
 {
     bool done = false;
     if(strncmp(command, "help", 4) == 0)
     {
-        const char * help = 
-            "\\name - change user name"
-            "\\bye - leave chat";
+        const char * help =
+            "\r\n\\name - change user name"
+            "\r\n\\bye - leave chat"
+            "\r\n";
 
-        SendData( (char*)help, strlen(help));
+        SendChatMessage(help);
         done = true;
     }
     else if (strncmp(command, "name ", 5) == 0)
     {
         if (strlen(command + 5) < 3) {
-            const char * msg = "Name must be at least 3 characters length";
-            SendData((char*)msg, strlen(msg));
+            const char * msg = "\r\nName must be at least 3 characters length";
+            SendChatMessage(msg);
         }
         else {
             char buff[80];
-            int len = snprintf(buff, 80, "\r\nUser %s renamed as %s\n", user_name, command + 5);
+            
+            int len = snprintf(buff, 80, "\r\nUser \x1b[32m%s\x1b[0m renamed as \x1b[32m%s\x1b[0m", user_name, command + 5);
             strcpy(user_name, command + 5);
             SendBroadcastMessage(buff, len);
         }
@@ -167,86 +173,97 @@ bool TelnetClient::CommandParser(char * command)
         chat_state = GoodBye;
         done = true;
     }
+    ShowPrompt();
     return done;
 }
 
-int TelnetClient::DefaultRunChat()
-
+void TelnetChat::WriteLogMessage(char * message)
 {
+    time_t t = time(NULL);
+    struct tm * tm = localtime(&t);
+    fprintf(log_file, "%d.%02d.%02d#%02d:%02d:%02d %s %s",
+        tm->tm_year, tm->tm_mon, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec,
+        user_name, message);
+}
+
+void TelnetChat::ShowPrompt()
+{
+    char buff[80];
+    int len = snprintf(buff, sizeof(buff), "\033[2K\033[32m%s\033[0m> ", user_name);
+    SendTelnet((unsigned char*) buff, len);
+}
+// ------------------------------------------------
+//  Основной цикл ANSI чата. Вся обработка здесь
+// ------------------------------------------------
+int TelnetChat::RunChat()
+{
+    const char * hello = "\033cWelcome to\033[32m simple chat\033[0m! Use \\help command for help";
     int     len;
+    int     wait_crlf = 0;
     char    message[4096];
 
-    this->FindTerminalSize();
-
+    FindTerminalSize();
     SwitchViewport(OutputWindow);
-
-    const char * hello = "\033cWelcome to\033[32m simple chat\033[0m! Use \help command for help";
     SendTelnet((unsigned char*)hello, strlen(hello));
-   
-    for (std::string & str : chat_messages) {
-        SendData(str.c_str(), str.size());
+
+    if (chat_messages.size() > 0) {
+        std::string     all_messages;
+        for (std::string & str : chat_messages)
+            all_messages += str;
+        SendData(all_messages.c_str(), all_messages.size());
     }
-    this->GetCursorPosition(&cur_x, &cur_y);
 
     len = snprintf(message, sizeof(message), "\r\nUser \033[33m%s\033[0m joined to chat", user_name);
+    GetCursorPosition(&cur_x, &cur_y);
     SendBroadcastMessage(message, len);
-
     SwitchViewport(InputWindow);
+    ShowPrompt();
 
     while (chat_state == CommonChat)
     {
         unsigned char * ptr = nullptr;
         char buff[4096];
         const int timeout_ms = 5000;
-        int read_size = ReceiveData(buff, sizeof(buff), timeout_ms);
+
+        FlushQueue();
+        int read_size = ReceiveData(buff + wait_crlf, sizeof(buff) - wait_crlf, timeout_ms);
 
         if (read_size == 0) {
-            printf("--- debug --- receive timeout\n");
-            continue;
-        }
-
-        if (read_size == -2) {
-            chat_state = GoodBye;
+            // Пригодится для чего либо.
+//            printf("--- debug --- receive timeout\n");
+            FlushQueue();
             continue;
         }
 
         if (read_size < 0) {
-            perror("socker error on receive: ");
-            break;
-        }
-
-        buff[read_size] = '\0';
-
-        if (buff[0] == (char)0xff) {
-            ptr = (unsigned char *) ParseProtocol((unsigned char*)buff, read_size);
-            if (ptr != nullptr)
-                printf("DEBUG additional parsing reuired\n");
+            chat_state = GoodBye;
+            if (read_size != -2)
+                perror("socker error on receive: ");
             continue;
         }
 
-        if (strcmp(buff, "\r\n") == 0) {
-            fprintf(stderr, "ping detected\n");
+        int total = wait_crlf + read_size;
+
+        buff[total] = '\0';
+
+        if ( buff[total-1] != 0xa || buff[total-2] != 0xd) {
+            wait_crlf = total;
+            fprintf(stdout, "partial message recied. Hold in buffer: %s\n", buff);
             continue;
         }
+        buff[total - 2] = 0;
+        len += wait_crlf;
+        wait_crlf = 0;
+
         if (buff[0] == '\\' && CommandParser(buff + 1) == true)
                 continue;
 
         len = snprintf(message, 4096, "\r\n\033[33m%s\033[0m: %s", user_name, buff);
 
-        if (chat_messages.size() > 25)
-            chat_messages.pop_front();
-        chat_messages.push_back(message);
 
-        printf("%s", message);
-
-        time_t t = time(NULL);
-        struct tm * tm = localtime(&t);
-        fprintf(log_file, "%d.%02d.%02d#%02d:%02d:%02d %s %s",
-            tm->tm_year, tm->tm_mon, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec,
-            user_name, message);
-
+        WriteLogMessage(message);
         SendBroadcastMessage(message, len);
-        SendTelnet( (unsigned char*) "\033[2K", 4);
+        ShowPrompt();
     }
     len = snprintf(message, sizeof(message), "\r\nUser \033[33m%s\033[0m leave chat", user_name);
     SendBroadcastMessage(message, len);

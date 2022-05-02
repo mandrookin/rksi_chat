@@ -23,10 +23,10 @@
 // ---------------------------------------------
 // Keep all connected clients to a hashed object
 // ----------------------------------------------
-std::map<long long, ChatClient *>   chat_clients;
-std::list<std::string>              chat_messages;
-CRITICAL_SECTION                    poks_protector;
-FILE                        *       log_file;
+clients_strorage_t              chat_clients;
+std::list<std::string>          chat_messages;
+CRITICAL_SECTION                poks_protector;
+FILE                        *   log_file;
 
 // -------------------------------------------------------
 // Функция "фабрика объектов"
@@ -37,22 +37,29 @@ ChatClient * HandleConnection(TcpConnection * client)
     ChatClient * chat_client = nullptr;
     int length;
     const unsigned  int   buffer_size = 2048;
-    const int TIMEOUT = 500;
+    const int TIMEOUT = 1500;
 
     char  * tcp_data = (char*) _malloca(buffer_size);
     length = client->ReceiveData(tcp_data, buffer_size, TIMEOUT);
     if (length <= 0) {
-        printf("Timeout %d ms. Will ignore raw socket or browser parallel connections\n", TIMEOUT);
+        if (length == 0) {
+            client->SendData("\xff\xfd\x18", 3);
+            length = client->ReceiveData(tcp_data, buffer_size, TIMEOUT);
+        }
+        if(length > 0)
+            chat_client = new TelnetChat(client, tcp_data, length);
+        else
+            printf("Timeout %d ms. Will ignore raw socket or browser parallel connections\n", TIMEOUT);
     }
     else if (tcp_data[0] == (char) 0xff) {
-        chat_client = new TelnetClient(client, tcp_data, length);
+        chat_client = new TelnetChat(client, tcp_data, length);
     }
     else {
         url_t       url;
         tcp_data[length] = 0;
         char    *   next = parse_http_request(tcp_data, &url);
         if (next != nullptr)
-            chat_client = new BrowserClient(client, url, next);
+            chat_client = new BrowserChat(client, url, next);
     }
     _freea(tcp_data);
     return chat_client;
@@ -75,7 +82,7 @@ void AddClientToList(ChatClient * chat)
 void RemoveClientFromList(ChatClient * chat)
 {
     EnterCriticalSection(&poks_protector);
-    std::map<long long, ChatClient *>::iterator iter = chat_clients.find(chat->GetHash());
+    clients_strorage_t::iterator iter = chat_clients.find(chat->GetHash());
     if (iter != chat_clients.end())
         chat_clients.erase(iter);
     else
@@ -115,18 +122,6 @@ DWORD WINAPI ClientProcedure(CONST LPVOID lpParam)
     fprintf(log_file, "%s connected %s:\n", tcp->source_name, chat_client->TransportName());
 
     chat_client->RunChat();
-
-
-    int len = snprintf(message, 4096, "TcpConnection %s connection closed\r\n", tcp->source_name);
-
-    EnterCriticalSection(&poks_protector);
-    for (const auto& any : chat_clients) {
-        ChatClient * peer = any.second;
-        peer->SendData(message, len);
-        putc('\n', stdout);
-        fflush(stdout);
-    }
-    LeaveCriticalSection(&poks_protector);
 
     RemoveClientFromList(chat_client);
 

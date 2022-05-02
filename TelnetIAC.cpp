@@ -11,18 +11,30 @@
 
 #include <wchar.h>
 
+// ---------------------------------------------
+//  Передача данных удалённой клиенту
+// ---------------------------------------------
 void TelnetIAC::SendTelnet(unsigned char * msg, int len)
 {
+    SendData((char*)msg, len);
+
     if (msg[0] == IAC) {
         printf("==> "); DebugIAC(msg, len);
     }
-    else if (msg[0] == 0x1b)
-        fprintf(stdout, "%s ==> \\0x1b%s\n", user_name, msg + 1);
-    else
-        fprintf(stdout, "%s ==> %s\n", user_name, msg);
-    SendData((char*)msg, len);
+    else {
+        unsigned char * bf = (unsigned char *) _malloca(len+1);
+        for (int i = 0; i < len; i++) {
+            bf[i] = msg[i] == 0x1b ? '\\' : msg[i];
+        }
+        bf[len] = 0;
+        fprintf(stdout, "%s ==> %s\n", user_name, bf);
+        _freea(bf);
+    }
 }
 
+// ---------------------------------------------
+//  Выводит осмысленное сообщени об ошибке
+// ---------------------------------------------
 void ErrorMessage(int err)
 {
     wchar_t        msgbuf[2048];   // for a message up to 255 bytes.
@@ -52,7 +64,24 @@ int TelnetIAC::ReceiveData(char * input_buffer, int buffer_size, int timeout_ms)
     if(res < 0 || len < 0)
         ErrorMessage( WSAGetLastError() );
     
-    return  len ? len : res > 0 ? -2 : res;
+    // Это выражение кажется сложным, но гораздо сложнее было подобрать его
+    // Суть в том, что мне понадобилось отличать таймаут приёма от ошибки сокета
+    // В случае таймата возвращается значение 0, в случае закрытия сокета удалённой сторойной возвращается -2
+    // Положительнное число - размер принятых данных, любоей другое число - какая-то другая ошибка
+    // Вероятно при портировании на Linux эту часть кода приёдся переписать
+    len = len ? len : res > 0 ? -2 : res;
+
+    if (len > 0) {
+        input_buffer[len] = 0;
+        {
+            unsigned char first = (unsigned char)input_buffer[0];
+            if ((first != 0xff && first != 0x1b) && input_buffer[len - 1] != 0xa)
+                printf("Catch it!");
+        }
+        len = ParseInputStream((unsigned char*)input_buffer, len);
+    }
+
+    return  len;
 }
 
 // ---------------------------------------------
@@ -111,15 +140,16 @@ void TelnetIAC::FindTerminalSize()
 
     unsigned char buffer[80];
     // Значения по умолчанию, если что-то пойдёт не так
-    terminal_width = 80, terminal_height = 25;
+    terminal_width = 80, terminal_height = 24;
     const char request_window_size[3] = { IAC, 0xfd, 0x1f };
     SendTelnet((unsigned char*)request_window_size, 3);
+    this->bits_sent.naws = true;
 
     int len = ReceiveData((char*)buffer, sizeof(buffer), 500);
     if (len <= 0)
         return;
 
-    ParseProtocol(buffer, len);
+    //ParseProtocol(buffer, len);
 }
 
 // ---------------------------------------------
@@ -164,41 +194,27 @@ void TelnetIAC::GetCursorPosition(int * x, int * y)
     SendTelnet((unsigned char*)request_go_ahead, 6);
 
     len = ReceiveData((char*)buffer, sizeof(buffer), 500);
-    if (len <= 0)
+    if (len < 0)
         return;
-
-    ptr = ParseProtocol(buffer, len);
 
     SendTelnet((unsigned char*) "\033[6n", 4);
 
     len = ReceiveData((char*)buffer, sizeof(buffer), 500);
-    if (len <= 0)
+    if (len < 0)
         return;
 
-    ptr = buffer;
-
-    if (buffer[0] == 0xff) {
-        while (buffer[0] == 0xff) {
-            ptr = ParseProtocol(buffer, len);
-            if (ptr) {
-                break;
-            }
-            len = ReceiveData((char*)buffer, sizeof(buffer), 500);
-            if (len <= 0)
-                return;
-            ptr = buffer;
-        }
+    if (len == 0) {
+//        fprintf(stderr, "TODO: syncronization error\n");
+        len = ReceiveData((char*)buffer, sizeof(buffer), 500);
     }
 
-    if(ptr)
-        ParseCursorPosition(ptr, len, x, y);
+    ParseCursorPosition(buffer, len, x, y);
 
     const char request_go_canoniical[] = { IAC,WONT,3, IAC,WONT,1, IAC,WONT,34 };;
     SendTelnet((unsigned char*)request_go_canoniical, 6);
 
     puts("---------------------- restore state\n");
 }
-
 
 // ----------------------------------------------------------------------
 // Процедура рукопожатия Telnet
@@ -232,7 +248,6 @@ int TelnetIAC::Handshake(unsigned char * data, int len)
 
     return 0;
 }
-
 
 unsigned char * TelnetIAC::parse_WILL(unsigned char * ptr)
 {
@@ -296,6 +311,20 @@ unsigned char * TelnetIAC::parse_SB(unsigned char * ptr, unsigned char * finish)
     return ptr;
 }
 
+int TelnetIAC::ParseInputStream(unsigned char * msg, int len)
+{
+    unsigned char * ptr = msg, * dest = msg, * finish = msg + len;
+    len = 0;
+    while (ptr != nullptr && ptr < finish) {
+        if (*ptr == IAC) {
+            ptr = ParseProtocol(ptr, finish - ptr);
+            continue;
+        } 
+        *dest++ = *ptr++;
+        len++;
+    }
+    return len;
+}
 
 unsigned char * TelnetIAC::ParseProtocol(unsigned char * msg, int len)
 {
@@ -307,21 +336,29 @@ unsigned char * TelnetIAC::ParseProtocol(unsigned char * msg, int len)
     for (ptr = msg, finish = msg + len; ptr != nullptr && ptr < finish; ptr++)
     {
         if (state == SYNC) {
+#if true
+            if(*ptr != IAC) 
+                return ptr;
+            state = CMD;
+            continue;
+#else // Это была отладка. Пока не нужно
             if (*ptr == IAC)
                 state = CMD;
-            else if (*ptr == 0x1b) {
-                printf("DEBUG: found escape\n");
-                break;
-            } 
-            else if (len == 2 && ptr[0] == 0xd && ptr[1] == 0xa) {
-                printf("DEBUG: ping?\n");
-                break;
-            }
-            else {
-                fprintf(stderr, "TELNET error: no IAC prefix\n");
-                ptr = finish;
-            }
-            continue;
+            else
+                if (*ptr == 0x1b) {
+                    printf("DEBUG: found escape\n");
+                    break;
+                }
+                else if (len == 2 && ptr[0] == 0xd && ptr[1] == 0xa) {
+                    printf("DEBUG: ping?\n");
+                    break;
+                }
+                else {
+                    fprintf(stderr, "TELNET error: no IAC prefix\n");
+                    ptr = finish;
+                }
+                continue;
+#endif
         }
         else
         {

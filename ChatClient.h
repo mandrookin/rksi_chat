@@ -1,6 +1,10 @@
 #include "TcpConnection.h"
 #include "serv.h"
 
+#include <map>
+#include <list>
+#include <string>
+
 class ChatClient {
 protected:
     TcpConnection   *   tcp;
@@ -24,6 +28,9 @@ public:
     virtual const char * TransportName() = 0;
 };
 
+
+typedef std::map<long long, ChatClient *>   clients_strorage_t;
+
 class TelnetIAC : public ChatClient
 {
     typedef union {
@@ -42,8 +49,11 @@ protected:
     int                 terminal_height;    // Количество строк терминала
     int                 cur_x;              // Сохранение горизонтальной позиции курсора
     int                 cur_y;              // Сохранение вериткальной позиции курсора
+
 private:
     void ParseCursorPosition(unsigned char * ptr, int len, int * x, int * y);
+    int ParseInputStream(unsigned char * msg, int len);
+
 protected:
     int ReceiveData(char * input_buffer, int buffer_size, int timeout_ms);
     int DebugIAC(unsigned char * data, int len);
@@ -64,7 +74,7 @@ public:
     }
 };
 
-class TelnetClient : public TelnetIAC
+class TelnetChat : public TelnetIAC
 {
     typedef enum {
         HandshakeState,
@@ -78,26 +88,31 @@ class TelnetClient : public TelnetIAC
         InputWindow 
     } viewport_t;
 
-    viewport_t          current_viewport;
-    connection_state_t  chat_state;
-    int                 user_x;              // Сохранение пользовательской позиции курсора
-    int                 user_y;              // Сохранение пользовательской позиции курсора
+    viewport_t              current_viewport;
+    connection_state_t      chat_state;
+    int                     user_x;              // Сохранение пользовательской позиции курсора
+    int                     user_y;              // Сохранение пользовательской позиции курсора
+    std::list<std::string>  send_queue;
 
 private:
     void SetCursorPosition(int x, int y);
     void SetViewport(int top, int bottom);
     void SwitchViewport(viewport_t window);
+    void SendChatMessage(std::string msg);
     bool CommandParser(char * command);
+    void AppendMessage(char * msg);
+    void FlushQueue();
+    void WriteLogMessage(char * message);
+    void ShowPrompt();
 private:
     int RunChat();
-    int DefaultRunChat();
     const char * TransportName() { return "Telnet"; };
 public:
-    TelnetClient(class TcpConnection *, char * data, int len);
     void SendBroadcastMessage(char * message, int len);
+    TelnetChat(class TcpConnection *, char * data, int len);
 };
 
-class BrowserClient : public ChatClient
+class BrowserChat : public ChatClient
 {
     url_t          url;
 private:
@@ -106,7 +121,7 @@ private:
 
     int HTTP_Response(url_t *url);
 public:
-    BrowserClient(class TcpConnection *, url_t url, char * header);
+    BrowserChat(class TcpConnection *, url_t url, char * header);
     void DebugURL();
 };
 
