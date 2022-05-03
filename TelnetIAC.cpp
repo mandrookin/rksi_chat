@@ -174,15 +174,13 @@ void TelnetIAC::FindTerminalSize()
     unsigned char buffer[80];
     // Значения по умолчанию, если что-то пойдёт не так
     terminal_width = 80, terminal_height = 24;
-    const char request_window_size[3] = { IAC, 0xfd, 0x1f };
+    const unsigned char request_window_size[3] = { IAC, 0xfd, 0x1f };
     SendTelnet((unsigned char*)request_window_size, 3);
     this->bits_sent.naws = true;
 
     int len = ReceiveData((char*)buffer, sizeof(buffer), 1500);
     if (len <= 0)
         return;
-
-    //ParseProtocol(buffer, len);
 }
 
 // ---------------------------------------------
@@ -218,7 +216,6 @@ void TelnetIAC::ParseCursorPosition(unsigned char * ptr, int len, int * x, int *
 void TelnetIAC::GetCursorPosition(int * x, int * y)
 {
     int len;
-    unsigned char * ptr;
     unsigned char buffer[80];
 
     const unsigned char request_go_ahead[] = { IAC, WILL,3, IAC,WILL,1, IAC,WONT,34 };
@@ -243,10 +240,10 @@ void TelnetIAC::GetCursorPosition(int * x, int * y)
 
     ParseCursorPosition(buffer, len, x, y);
 
-    const char request_go_canoniical[] = { IAC,WONT,3, IAC,WONT,1, IAC,WONT,34 };;
+    const unsigned char request_go_canoniical[] = { IAC,WONT,3, IAC,WONT,1, IAC,WONT,34 };;
     SendTelnet((unsigned char*)request_go_canoniical, 6);
 
-    puts("---------------------- restore state after Get cursor postion\n");
+    puts("DEBUG: --------------- restore state after Get cursor postion\n");
 }
 
 // ----------------------------------------------------------------------
@@ -255,8 +252,6 @@ void TelnetIAC::GetCursorPosition(int * x, int * y)
 // ----------------------------------------------------------------------
 int TelnetIAC::Handshake(unsigned char * data, int len)
 {
-    unsigned char input_buffer[2048];
-
     DebugIAC(data, len);
 
     unsigned char *p = data, *finish = data + len;
@@ -350,7 +345,7 @@ int TelnetIAC::ParseInputStream(unsigned char * msg, int len)
     len = 0;
     while (ptr != nullptr && ptr < finish) {
         if (*ptr == IAC) {
-            ptr = ParseProtocol(ptr, finish - ptr);
+            ptr = ParseProtocol(ptr, (int) (finish - ptr));
             continue;
         } 
         *dest++ = *ptr++;

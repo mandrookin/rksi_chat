@@ -18,14 +18,14 @@ typedef union {
 
 typedef struct {
     HANDLE          connection_ready;
-    int             client_socket;
-    int             server_socket;
+    SOCKET          client_socket;
+    SOCKET          server_socket;
 //    FILE    *       log_file;
 } global_context_t;
 
 // Network client class
 class TcpConnection {
-    int                 socket;
+    SOCKET              socket;
     int                 source_port;
 
 public:
@@ -43,7 +43,7 @@ public:
     HANDLE CreateReadEvent();
     int GetEvent(HANDLE ev);
 
-    TcpConnection(int socket);
+    TcpConnection(SOCKET socket);
     virtual ~TcpConnection();
 };
 

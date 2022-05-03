@@ -18,8 +18,6 @@
 // Link with ws2_32.lib
 #pragma comment(lib, "Ws2_32.lib")
 
-#define EXIT_FAILURE -2
-
 // ---------------------------------------------
 // Keep all connected clients to a hashed object
 // ----------------------------------------------
@@ -99,7 +97,6 @@ DWORD WINAPI ClientProcedure(CONST LPVOID lpParam)
     global_context_t    *   context = (global_context_t*)lpParam;
     TcpConnection       *   tcp;
     ChatClient          *   chat_client;
-    char                    message[4096];
 
     tcp = new TcpConnection(context->client_socket);
     tcp->Accept();
@@ -133,9 +130,9 @@ DWORD WINAPI ClientProcedure(CONST LPVOID lpParam)
 // ---------------------------------------------
 // Prepare server to accept connections
 // ---------------------------------------------
-int prepare_server_socket(struct sockaddr_in * address)
+SOCKET PrepareServerSocket(struct sockaddr_in * address)
 {
-    int server_fd;
+    SOCKET server_fd;
     int opt = 1;
 
     // Creating socket file descriptor 
@@ -172,7 +169,7 @@ int prepare_server_socket(struct sockaddr_in * address)
     return server_fd;
 }
 
-char * get_current_date()
+char * GetCurrentDate()
 {
     time_t curr_time;
     tm * curr_tm;
@@ -200,7 +197,7 @@ int main(int argc, char const *argv[])
 #if LOGS
     poks_context.log_file = fopen("poks_chat.log", "a+");
 #else
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 0; i++) {
         char bf[80];
         snprintf(bf, 80, "\r\nLine %d", i);
         chat_messages.push_back(bf);
@@ -227,10 +224,10 @@ int main(int argc, char const *argv[])
         return 1;
     }
 
-    poks_context.server_socket = prepare_server_socket(&address);
+    poks_context.server_socket = PrepareServerSocket(&address);
 
     printf("Chat-Server ready to accept connections\n");
-    fprintf(log_file, "Server started on %s\n", get_current_date());
+    fprintf(log_file, "Server started on %s\n", GetCurrentDate());
     fflush(log_file);
 
     InitializeCriticalSection(&poks_protector);

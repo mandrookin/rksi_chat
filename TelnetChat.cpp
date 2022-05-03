@@ -1,6 +1,7 @@
 //
 // Хорошее описание ANSI-команд
 // https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
+// https://vt100.net/docs/vt510-rm/chapter4.html
 
 #define _WINSOCK_DEPRECATED_NO_WARNINGS 1
 #define _CRT_SECURE_NO_WARNINGS 1
@@ -80,7 +81,7 @@ void TelnetChat::SwitchViewport(viewport_t window)
     {
         if (current_viewport == InputWindow)
             GetCursorPosition(&user_x, &user_y);
-        top = 1;
+        top = 2;
         bottom = terminal_height - 1;
         x = cur_x;
         y = cur_y;
@@ -93,7 +94,7 @@ void TelnetChat::SwitchViewport(viewport_t window)
 void TelnetChat::SendChatMessage(std::string msg)
 {
     SwitchViewport(OutputWindow);
-    SendData((const char*) msg.c_str(), msg.size());
+    SendData((const char*) msg.c_str(), (int) msg.size());
     SwitchViewport(InputWindow);
 }
 
@@ -215,16 +216,16 @@ int TelnetChat::RunChat()
 
     FindTerminalSize();
     SwitchViewport(OutputWindow);
-    SendTelnet((unsigned char*)hello, strlen(hello));
+    SendTelnet((unsigned char*)hello, (int) strlen(hello));
 
     if (chat_messages.size() > 0) {
         std::string     all_messages;
         for (std::string & str : chat_messages)
             all_messages += str;
-        SendData(all_messages.c_str(), all_messages.size());
+        SendData(all_messages.c_str(), (int) all_messages.size());
     }
 
-    len = snprintf(message, sizeof(message), "\r\nUser \033[33m%s\033[0m joined to chat", user_name);
+    len = snprintf(message, sizeof(message), "\r\n\033[33m%s\033[0m has joined the chat", user_name);
     GetCursorPosition(&cur_x, &cur_y);
     SendBroadcastMessage(message, len);
     SwitchViewport(InputWindow);
@@ -303,7 +304,7 @@ int TelnetChat::RunChat()
         SendBroadcastMessage(message, len);
         ShowPrompt();
     }
-    len = snprintf(message, sizeof(message), "\r\nUser \033[33m%s\033[0m leave chat", user_name);
+    len = snprintf(message, sizeof(message), "\r\n\033[33m%s\033[0m has left the chat", user_name);
     SendBroadcastMessage(message, len);
     fprintf(log_file, "TcpConnection disconnected %s:\n", user_name);
     fflush(log_file);
@@ -311,5 +312,6 @@ int TelnetChat::RunChat()
     CloseHandle(chat_events[0]);
     CloseHandle(chat_events[1]);
     CloseSocket();
+    return 0;
 }
 

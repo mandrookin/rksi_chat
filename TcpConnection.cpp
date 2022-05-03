@@ -11,7 +11,7 @@
 
 //int DebugTelnet(unsigned char * data, int len);
 
-TcpConnection::TcpConnection(int socket)
+TcpConnection::TcpConnection(SOCKET socket)
 {
     this->socket = socket;
 }
@@ -47,6 +47,7 @@ int TcpConnection::WaitDataReceive(int timeout_ms)
     {
         res = 0;
     }
+    return res;
 }
 
 HANDLE TcpConnection::CreateReadEvent()
@@ -125,7 +126,6 @@ int TcpConnection::Close()
 
 void TcpConnection::Accept()
 {
-    int ret_val, error_code;
     struct sockaddr_storage addr;
     struct sockaddr_in name;
     socklen_t len = sizeof addr;

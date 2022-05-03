@@ -36,18 +36,18 @@ const char * http_response_body =
 
 int PositiveReposne(char * buff, int buff_size)
 {
-    int header_len, body_len, total_len;
+    size_t header_len, body_len, total_len;
     body_len = strlen(http_response_body);
     header_len = snprintf(buff, buff_size, http_response_header, body_len);
     total_len = header_len + body_len;
     snprintf(buff + header_len, buff_size - body_len,  "%s", http_response_body);
-    return total_len;
+    return (int) total_len;
 }
 
 int NegativeResponse(char * buff, int buff_size)
 {
     strncpy(buff, http_not_found, buff_size);
-    return strlen(buff);
+    return (int) strlen(buff);
 }
 
 int BrowserChat::HTTP_Response(url_t *url)
