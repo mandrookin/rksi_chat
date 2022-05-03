@@ -45,6 +45,7 @@ class TelnetIAC : public ChatClient
     bool                line_mode;          // Режим терминала
     iac_sent_t          bits_sent;
 protected:
+    HANDLE              chat_events[2];
     int                 terminal_width;     // Ширина терминала в символах
     int                 terminal_height;    // Количество строк терминала
     int                 cur_x;              // Сохранение горизонтальной позиции курсора
@@ -55,6 +56,7 @@ private:
     int ParseInputStream(unsigned char * msg, int len);
 
 protected:
+    int ReceiveData(char * input_buffer, int buffer_size);
     int ReceiveData(char * input_buffer, int buffer_size, int timeout_ms);
     int DebugIAC(unsigned char * data, int len);
     unsigned char * ParseProtocol(unsigned char * msg, int len);

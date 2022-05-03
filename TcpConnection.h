@@ -40,6 +40,8 @@ public:
     int SendData(const char * data, int size);
     int Close();
     void Accept();
+    HANDLE CreateReadEvent();
+    int GetEvent(HANDLE ev);
 
     TcpConnection(int socket);
     virtual ~TcpConnection();

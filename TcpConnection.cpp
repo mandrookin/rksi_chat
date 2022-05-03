@@ -1,7 +1,5 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS 1
 
-
-
 #include <stdio.h> 
 #include <winsock2.h>
 #include <ws2tcpip.h> 
@@ -11,7 +9,7 @@
 #include "serv.h"
 #include "ChatClient.h"
 
-int DebugTelnet(unsigned char * data, int len);
+//int DebugTelnet(unsigned char * data, int len);
 
 TcpConnection::TcpConnection(int socket)
 {
@@ -51,16 +49,48 @@ int TcpConnection::WaitDataReceive(int timeout_ms)
     }
 }
 
+HANDLE TcpConnection::CreateReadEvent()
+{
+    HANDLE h = WSACreateEvent();
+    ::WSAEventSelect(socket, h, FD_READ | FD_CLOSE );
+    return h;
+}
+
+
+int TcpConnection::GetEvent(HANDLE h)
+{
+    WSANETWORKEVENTS NetworkEvents;
+    WSAEnumNetworkEvents( socket, h, &NetworkEvents); 
+    return NetworkEvents.lNetworkEvents;
+}
+
 int TcpConnection::ReceiveData(char * input_buffer, int buffer_size)
 {
-    int read_size = recv(socket, input_buffer, buffer_size, 0);
-    if (read_size < 0) {
-        perror("recv");
-        closesocket(socket);
-        return -1;
-    }
+#if true
+    WSABUF DataBuf;
+    DWORD RecvBytes, Flags;
 
+    //u_long iMode = 0;
+    //if (ioctlsocket(socket, FIONBIO, &iMode) != NO_ERROR)
+    //    perror("ioctlsocket failed with error\n");
+
+    DataBuf.len = buffer_size;
+    DataBuf.buf = input_buffer;
+    Flags = 0; // MSG_PARTIAL;
+
+    int rc = WSARecv(socket, &DataBuf, 1, &RecvBytes, &Flags, NULL, NULL);
+    if (rc != 0)
+        RecvBytes = -1;
+    return RecvBytes;
+#else
+    int read_size = recv(socket, input_buffer, buffer_size, 0);
+    //if (read_size < 0) {
+    //    perror("recv");
+    //    closesocket(socket);
+    //    return -1;
+    //}
     return read_size;
+#endif
 }
 
 int TcpConnection::ReceiveData(char * input_buffer, int buffer_size, int timeout_ms)
@@ -80,27 +110,11 @@ int TcpConnection::SendData(const char * data, int size)
     DataBuf.len = size;
     DataBuf.buf = (char*)data;
 
-#if false
-    int ret_val = WSASend(socket, &DataBuf, 1, &SendBytes, Flags, &SendOverlapped, NULL);
-    if (ret_val < 0) {
-        printf("Unable send to socket. Errno %d\n", WSAGetLastError());
-        return -1;
-    }
-
-    ret_val = WSAWaitForMultipleEvents(1, &SendOverlapped.hEvent, TRUE, INFINITE, TRUE);
-    if (ret_val < 0) {
-        printf("Wait with send failed. Errno %d\n", WSAGetLastError());
-        SendBytes = -1;
-    }
-
-    WSAResetEvent(SendOverlapped.hEvent);
-#else
     int ret_val = WSASend(socket, &DataBuf, 1, &SendBytes, Flags, NULL, NULL);
     if (ret_val < 0) {
         printf("Unable send to socket. Errno %d\n", WSAGetLastError());
         return -1;
     }
-#endif
     return SendBytes;
 }
 
@@ -130,8 +144,7 @@ void TcpConnection::Accept()
         source_port = ntohs(s->sin_port);
         inet_ntop(AF_INET, &s->sin_addr, buff, sizeof(buff));
 
-        const int color = 32;
-        snprintf(source_name, sizeof(source_name), "\x1b[%dm%s:%d\x1b[0m", color, buff, source_port);
+        snprintf(source_name, sizeof(source_name), "%s:%d", buff, source_port);
 
         this->hash.id.ip_address = s->sin_addr.S_un.S_addr;
         this->hash.id.port = source_port;

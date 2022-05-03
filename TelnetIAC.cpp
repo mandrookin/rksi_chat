@@ -18,6 +18,7 @@ void TelnetIAC::SendTelnet(unsigned char * msg, int len)
 {
     SendData((char*)msg, len);
 
+#if false // Отладка отправляемых даннных в консоль чат-сервера
     if (msg[0] == IAC) {
         printf("==> "); DebugIAC(msg, len);
     }
@@ -30,6 +31,7 @@ void TelnetIAC::SendTelnet(unsigned char * msg, int len)
         fprintf(stdout, "%s ==> %s\n", user_name, bf);
         _freea(bf);
     }
+#endif
 }
 
 // ---------------------------------------------
@@ -55,21 +57,11 @@ void ErrorMessage(int err)
     fwprintf(stderr, msgbuf);
 }
 
-int TelnetIAC::ReceiveData(char * input_buffer, int buffer_size, int timeout_ms)
+int TelnetIAC::ReceiveData(char * input_buffer, int buffer_size)
 {
-    int len = 0;
-    int res = tcp->WaitDataReceive(timeout_ms);
-    if (res > 0)
-        len = tcp->ReceiveData(input_buffer, buffer_size);
-    if(res < 0 || len < 0)
-        ErrorMessage( WSAGetLastError() );
-    
-    // Это выражение кажется сложным, но гораздо сложнее было подобрать его
-    // Суть в том, что мне понадобилось отличать таймаут приёма от ошибки сокета
-    // В случае таймата возвращается значение 0, в случае закрытия сокета удалённой сторойной возвращается -2
-    // Положительнное число - размер принятых данных, любоей другое число - какая-то другая ошибка
-    // Вероятно при портировании на Linux эту часть кода приёдся переписать
-    len = len ? len : res > 0 ? -2 : res;
+    int len = tcp->ReceiveData(input_buffer, buffer_size);
+    if (len < 0)
+        ErrorMessage(WSAGetLastError());
 
     if (len > 0) {
         input_buffer[len] = 0;
@@ -81,6 +73,47 @@ int TelnetIAC::ReceiveData(char * input_buffer, int buffer_size, int timeout_ms)
         len = ParseInputStream((unsigned char*)input_buffer, len);
     }
 
+    return  len;
+}
+
+// ---------------------------------------------
+//  Чтение данных с таймаутом
+// ---------------------------------------------
+int TelnetIAC::ReceiveData(char * input_buffer, int buffer_size, int timeout_ms)
+{
+    int len = 0;
+#if true
+    int res = tcp->WaitDataReceive(timeout_ms);
+    if (res > 0)
+        len = tcp->ReceiveData(input_buffer, buffer_size);
+    if(res < 0 || len < 0)
+        ErrorMessage( WSAGetLastError() );
+    // Это выражение кажется сложным, но гораздо сложнее было подобрать его
+    // Суть в том, что мне понадобилось отличать таймаут приёма от ошибки сокета
+    // В случае таймата возвращается значение 0, в случае закрытия сокета удалённой сторойной возвращается -2
+    // Положительнное число - размер принятых данных, любоей другое число - какая-то другая ошибка
+    // Вероятно при портировании на Linux эту часть кода приёдся переписать
+    len = len ? len : res > 0 ? -2 : res;
+#else
+    DWORD rdy = WaitForSingleObject(this->chat_events[1], timeout_ms);
+    if (rdy != WAIT_OBJECT_0) {
+        printf("Got timeout on receive data\n");
+        return 0;
+    }
+    len = tcp->ReceiveData(input_buffer, buffer_size);
+#endif
+
+    if (len > 0) {
+        input_buffer[len] = 0;
+        {
+            unsigned char first = (unsigned char)input_buffer[0];
+            if ((first != 0xff && first != 0x1b) && input_buffer[len - 1] != 0xa)
+                printf("Catch it!");
+        }
+        len = ParseInputStream((unsigned char*)input_buffer, len);
+    }
+
+    ResetEvent(this->chat_events[1]);
     return  len;
 }
 
@@ -145,7 +178,7 @@ void TelnetIAC::FindTerminalSize()
     SendTelnet((unsigned char*)request_window_size, 3);
     this->bits_sent.naws = true;
 
-    int len = ReceiveData((char*)buffer, sizeof(buffer), 500);
+    int len = ReceiveData((char*)buffer, sizeof(buffer), 1500);
     if (len <= 0)
         return;
 
@@ -203,8 +236,8 @@ void TelnetIAC::GetCursorPosition(int * x, int * y)
     if (len < 0)
         return;
 
-    if (len == 0) {
-//        fprintf(stderr, "TODO: syncronization error\n");
+    for (int i = 0; i < 4 && len == 0; i++) {
+        fprintf(stdout, "TODO: syncronization error\n");
         len = ReceiveData((char*)buffer, sizeof(buffer), 500);
     }
 
@@ -213,7 +246,7 @@ void TelnetIAC::GetCursorPosition(int * x, int * y)
     const char request_go_canoniical[] = { IAC,WONT,3, IAC,WONT,1, IAC,WONT,34 };;
     SendTelnet((unsigned char*)request_go_canoniical, 6);
 
-    puts("---------------------- restore state\n");
+    puts("---------------------- restore state after Get cursor postion\n");
 }
 
 // ----------------------------------------------------------------------
@@ -336,29 +369,10 @@ unsigned char * TelnetIAC::ParseProtocol(unsigned char * msg, int len)
     for (ptr = msg, finish = msg + len; ptr != nullptr && ptr < finish; ptr++)
     {
         if (state == SYNC) {
-#if true
             if(*ptr != IAC) 
                 return ptr;
             state = CMD;
             continue;
-#else // Это была отладка. Пока не нужно
-            if (*ptr == IAC)
-                state = CMD;
-            else
-                if (*ptr == 0x1b) {
-                    printf("DEBUG: found escape\n");
-                    break;
-                }
-                else if (len == 2 && ptr[0] == 0xd && ptr[1] == 0xa) {
-                    printf("DEBUG: ping?\n");
-                    break;
-                }
-                else {
-                    fprintf(stderr, "TELNET error: no IAC prefix\n");
-                    ptr = finish;
-                }
-                continue;
-#endif
         }
         else
         {

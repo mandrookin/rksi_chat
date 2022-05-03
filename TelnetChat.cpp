@@ -34,6 +34,7 @@ TelnetChat::TelnetChat(TcpConnection * tcp, char * tcp_packet, int length) : Tel
     user_y = 1;
     cur_x = 1;
     cur_y = 1;
+
     TelnetIAC::Handshake( (unsigned char*) tcp_packet, length);
 }
 
@@ -99,6 +100,7 @@ void TelnetChat::SendChatMessage(std::string msg)
 void TelnetChat::AppendMessage(char * message)
 {
     send_queue.push_back(message);
+    SetEvent(this->chat_events[0]);
 }
 
 // -------------------------------------------------
@@ -161,7 +163,6 @@ bool TelnetChat::CommandParser(char * command)
         }
         else {
             char buff[80];
-            
             int len = snprintf(buff, 80, "\r\nUser \x1b[32m%s\x1b[0m renamed as \x1b[32m%s\x1b[0m", user_name, command + 5);
             strcpy(user_name, command + 5);
             SendBroadcastMessage(buff, len);
@@ -177,6 +178,9 @@ bool TelnetChat::CommandParser(char * command)
     return done;
 }
 
+// ------------------------------------------------
+//  Запись лога чата в файл
+// ------------------------------------------------
 void TelnetChat::WriteLogMessage(char * message)
 {
     time_t t = time(NULL);
@@ -186,12 +190,16 @@ void TelnetChat::WriteLogMessage(char * message)
         user_name, message);
 }
 
+// ------------------------------------------------
+//  Показываем имя пользователя в строке ввода
+// ------------------------------------------------
 void TelnetChat::ShowPrompt()
 {
     char buff[80];
     int len = snprintf(buff, sizeof(buff), "\033[2K\033[32m%s\033[0m> ", user_name);
     SendTelnet((unsigned char*) buff, len);
 }
+
 // ------------------------------------------------
 //  Основной цикл ANSI чата. Вся обработка здесь
 // ------------------------------------------------
@@ -201,6 +209,9 @@ int TelnetChat::RunChat()
     int     len;
     int     wait_crlf = 0;
     char    message[4096];
+
+    chat_events[0] = CreateEvent(NULL, false, false, L"Send data signal");
+    chat_events[1] = tcp->CreateReadEvent();
 
     FindTerminalSize();
     SwitchViewport(OutputWindow);
@@ -222,16 +233,46 @@ int TelnetChat::RunChat()
     while (chat_state == CommonChat)
     {
         unsigned char * ptr = nullptr;
+        int socket_event;
         char buff[4096];
-        const int timeout_ms = 5000;
+        const int timeout_ms = 60000;
 
-        FlushQueue();
-        int read_size = ReceiveData(buff + wait_crlf, sizeof(buff) - wait_crlf, timeout_ms);
+        DWORD hit = WaitForMultipleObjects(2, chat_events, false, timeout_ms);
+
+        switch (hit)
+        {
+            // Готовы данные для передачи Telnet клиенту
+        case WAIT_OBJECT_0 + 0:
+            FlushQueue();
+            continue;
+
+            // Телнет клиент прислал какие-то данные
+        case WAIT_OBJECT_0 + 1:
+            socket_event = tcp->GetEvent(chat_events[1]);
+            if (socket_event & FD_CLOSE) {
+                // Телнет клиент закрыл соединение
+                chat_state = GoodBye;
+                continue;
+            }
+            // Пришли данные от Телнет-клиента
+            break;
+
+        case WAIT_TIMEOUT:
+            // Это событие можно использовать для чего-то полезного
+            printf("Reserved timer hit.\n");
+            continue;
+
+            // Return value is invalid.
+        default:
+            printf("Wait error: %d\n", GetLastError());
+            chat_state = GoodBye;
+            continue;
+        }
+
+        int read_size = ReceiveData(buff + wait_crlf, sizeof(buff) - wait_crlf);
 
         if (read_size == 0) {
-            // Пригодится для чего либо.
-//            printf("--- debug --- receive timeout\n");
-            FlushQueue();
+            // Сюда прилетает когда получены внутренние данные протокола Telnet 
             continue;
         }
 
@@ -243,9 +284,7 @@ int TelnetChat::RunChat()
         }
 
         int total = wait_crlf + read_size;
-
         buff[total] = '\0';
-
         if ( buff[total-1] != 0xa || buff[total-2] != 0xd) {
             wait_crlf = total;
             fprintf(stdout, "partial message recied. Hold in buffer: %s\n", buff);
@@ -260,7 +299,6 @@ int TelnetChat::RunChat()
 
         len = snprintf(message, 4096, "\r\n\033[33m%s\033[0m: %s", user_name, buff);
 
-
         WriteLogMessage(message);
         SendBroadcastMessage(message, len);
         ShowPrompt();
@@ -269,6 +307,9 @@ int TelnetChat::RunChat()
     SendBroadcastMessage(message, len);
     fprintf(log_file, "TcpConnection disconnected %s:\n", user_name);
     fflush(log_file);
+
+    CloseHandle(chat_events[0]);
+    CloseHandle(chat_events[1]);
     CloseSocket();
 }
 
